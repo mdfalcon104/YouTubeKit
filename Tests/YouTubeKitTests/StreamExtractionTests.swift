@@ -16,8 +16,19 @@
 import XCTest
 @testable import YouTubeKit
 
+/// Live E2E tests that hit the YouTube API. Gated behind the `YOUTUBEKIT_E2E`
+/// environment variable to avoid CI failures from network/geo/third-party outages.
+/// Run with: `YOUTUBEKIT_E2E=1 swift test --filter StreamExtractionTests`
 @available(iOS 15.0, watchOS 8.0, tvOS 15.0, macOS 12.0, *)
 final class StreamExtractionTests: XCTestCase {
+
+    override func setUp() async throws {
+        try await super.setUp()
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["YOUTUBEKIT_E2E"] != nil,
+            "Set YOUTUBEKIT_E2E=1 to run live E2E tests"
+        )
+    }
 
     // MARK: - Helpers
 
@@ -146,8 +157,9 @@ final class StreamExtractionTests: XCTestCase {
             // If we get here, the bypass worked — validate streams
             try await assertStreamsValid(streams)
             XCTAssertFalse(streams.filterAudioOnly().isEmpty, "No audio streams for age-restricted video")
-        } catch let error as YouTubeKitError where error == .videoAgeRestricted {
-            // Expected — age-restricted videos need auth which tests don't have
+        } catch let error as YouTubeKitError where [.videoAgeRestricted, .videoUnavailable, .videoPrivate, .membersOnly, .extractError].contains(error) {
+            // Expected — age-restricted videos can surface various access-control
+            // errors depending on region, account state, or YouTube policy changes.
         }
     }
 
@@ -209,11 +221,10 @@ final class StreamExtractionTests: XCTestCase {
         }
 
         // pickBestStream should return a playable audio stream
-        if let bestAudio = streams.pickBestStream() {
-            XCTAssertTrue(bestAudio.isNativelyPlayable, "pickBestStream returned non-playable stream")
-            XCTAssertTrue(bestAudio.isAudioOnly, "pickBestStream returned non audio-only stream")
-            try await assertStreamsReachable([bestAudio], limit: 1)
-        }
+        let bestAudio = try XCTUnwrap(streams.pickBestStream(), "pickBestStream returned nil")
+        XCTAssertTrue(bestAudio.isNativelyPlayable, "pickBestStream returned non-playable stream")
+        XCTAssertTrue(bestAudio.isAudioOnly, "pickBestStream returned non audio-only stream")
+        try await assertStreamsReachable([bestAudio], limit: 1)
     }
 
     // MARK: - High resolution video

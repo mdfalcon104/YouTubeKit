@@ -128,7 +128,7 @@ class InnerTube {
     
     init(client: ClientType = .ios, signatureTimestamp: Int?, ytcfg: Extraction.YtCfg, useOAuth: Bool = false, allowCache: Bool = true) {
         // Single lookup instead of four force-unwraps — crashes with a clear message
-        // if a ClientType is added without a matching entry (audit HIGH).
+        // if a ClientType is added without a matching entry.
         guard let clientDef = defaultClients[client] else {
             preconditionFailure("Missing client definition for \(client.rawValue)")
         }
@@ -192,7 +192,7 @@ class InnerTube {
         var request = URLRequest(url: urlComponents.url!)
         request.httpMethod = "post"
         request.httpBody = data
-        // Timeout prevents indefinite hang on network stalls (audit P0)
+        // Timeout prevents indefinite hang on network stalls
         request.timeoutInterval = 15
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
         // Use client-specific UA from headers first; fall back to ytcfg or generic Safari UA.

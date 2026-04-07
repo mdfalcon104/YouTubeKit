@@ -19,7 +19,7 @@ class RemoteYouTubeClient {
     func extractStreams(forVideoID videoID: String) async throws -> [RemoteStream] {
 
         // Guard URL construction instead of force-unwrap — a malformed serverURL
-        // should throw a clear error, not crash the app (audit HIGH).
+        // should throw a clear error, not crash the app.
         guard var urlComponents = URLComponents(url: serverURL.appendingPathComponent("v1"), resolvingAgainstBaseURL: false) else {
             throw YouTubeKitError.extractError
         }

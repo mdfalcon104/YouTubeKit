@@ -119,7 +119,7 @@ public class YouTube {
             request.setValue(Self.browserUserAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("en-US,en", forHTTPHeaderField: "accept-language")
             request.httpShouldHandleCookies = false
-            // Timeout prevents indefinite hang on network stalls (audit P0)
+            // Timeout prevents indefinite hang on network stalls
             request.timeoutInterval = 30
             let (data, _) = try await URLSession.shared.data(for: request)
             _watchHTML = String(data: data, encoding: .utf8) ?? ""
@@ -137,7 +137,7 @@ public class YouTube {
             request.setValue(Self.browserUserAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("en-US,en", forHTTPHeaderField: "accept-language")
             request.httpShouldHandleCookies = false
-            // Timeout prevents indefinite hang on network stalls (audit P0)
+            // Timeout prevents indefinite hang on network stalls
             request.timeoutInterval = 30
             let (data, _) = try await URLSession.shared.data(for: request)
             _embedHTML = String(data: data, encoding: .utf8) ?? ""
@@ -198,7 +198,7 @@ public class YouTube {
                 jsString = try await Extraction.jsURL(html: watchHTML)
             }
             // Guard instead of force-unwrap — a malformed player path from YouTube
-            // should throw a clear error, not crash the app (audit HIGH S2).
+            // should throw a clear error, not crash the app.
             guard let url = URL(string: jsString) else {
                 throw YouTubeKitError.extractError
             }
