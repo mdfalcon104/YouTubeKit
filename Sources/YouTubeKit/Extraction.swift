@@ -55,17 +55,25 @@ class Extraction {
     }
     
     /// Get the YouTube player base JavaScript path.
+    /// YouTube serves multiple player JS variants (main, tcc, tce, tv, phone, etc.).
+    /// The patterns below cover all known URL formats as of April 2026 (synced with yt-dlp).
     class func getYTPlayerJS(html: String) throws -> String {
         let jsURLPatterns = [
-            NSRegularExpression(#"(/s/player/[\w\d]+/[\w\d_/.]+/base\.js)"#)
+            // Standard player URL format — e.g. /s/player/9f4cc5e4/player_ias.vflset/en_US/base.js
+            NSRegularExpression(#"(/s/player/[\w\d]+/[\w\d_/.]+/base\.js)"#),
+            // Full absolute URL variant — sometimes found in embed HTML with https://www.youtube.com prefix
+            NSRegularExpression(#"(https?://(?:www\.)?youtube\.com/s/player/[\w\d]+/[\w\d_/.]+/base\.js)"#),
+            // TV player variant — yt-dlp defaults to tv variant since Feb 2026 (#15818)
+            // because the main variant's sig function can be harder to extract.
+            NSRegularExpression(#"(/s/player/[\w\d]+/tv[^"]*?/base\.js)"#)
         ]
-        
+
         for pattern in jsURLPatterns {
             if let match = pattern.firstMatch(in: html, group: 1) {
                 return match.content
             }
         }
-        
+
         throw YouTubeKitError.regexMatchError
     }
     
@@ -363,10 +371,7 @@ class Extraction {
     }
     
     class func applyDescrambler(streamData: InnerTube.StreamingData) -> [InnerTube.StreamingData.Format] {
-        /*if streamData.keys.contains("url") {
-            return nil
-        }*/
-        
+
         var formats = [InnerTube.StreamingData.Format]()
         if let streamFormats = streamData.formats {
             formats += streamFormats
@@ -374,20 +379,35 @@ class Extraction {
         if let adaptiveFormats = streamData.adaptiveFormats {
             formats += adaptiveFormats
         }
-        
+
         for (i, data) in formats.enumerated() {
             if data.url == nil {
                 if let signatureCipher = data.signatureCipher {
                     let cipherURL = parseQueryString(signatureCipher)
-                    // URL-decode the values (they come percent-encoded from signatureCipher)
+                    // URL-decode the values — signatureCipher values are percent-encoded,
+                    // and URLComponents already decodes once, but the URL value itself may
+                    // be double-encoded (the URL within the cipher string), so we decode again.
                     formats[i].url = cipherURL["url"]?.first?.removingPercentEncoding ?? cipherURL["url"]?.first
                     formats[i].s = cipherURL["s"]?.first?.removingPercentEncoding ?? cipherURL["s"]?.first
+                    // sp is the query parameter name for the decrypted signature (usually "sig" or "signature")
                     formats[i].sp = cipherURL["sp"]?.first?.removingPercentEncoding ?? cipherURL["sp"]?.first
                 }
+                // If format has neither url nor signatureCipher, it's a SABR-only stream
+                // (serverAbrStreamingUrl). These cannot be played via direct URL download —
+                // they require YouTube's proprietary Server ABR protocol. We leave url as nil;
+                // these formats will be filtered out during Stream construction.
             }
         }
-        
-        os_log("applying descrambler", log: log, type: .debug)
+
+        // Remove formats with no URL (SABR-only or missing data) or empty-string URLs
+        // (malformed signatureCipher with missing "url" key). Both waste cycles in the
+        // signature solver and produce broken Stream objects downstream.
+        formats = formats.filter { url in
+            guard let urlStr = url.url else { return false }
+            return !urlStr.isEmpty
+        }
+
+        os_log("applying descrambler — %{public}i usable formats", log: log, type: .debug, formats.count)
         return formats
     }
     
@@ -457,16 +477,14 @@ class Extraction {
                 }
 
 
-                // apply throttling "n" signature
+                // Apply throttling "n" signature — if solving fails, keep the stream anyway.
+                // An unsolved n-param means the stream will be throttled but still playable.
+                // Dropping it entirely is worse than serving a throttled stream.
                 if let initialN = urlComponents.queryItems?["n"] {
-                    guard let newN = response.nMap[initialN] else {
-                        invalidStreamIndices.append(i)
-                        continue
-                    }
-                    urlComponents.queryItems?["n"] = newN
-
-                    if newN.isEmpty {
-                        invalidStreamIndices.append(i)
+                    if let newN = response.nMap[initialN], !newN.isEmpty {
+                        urlComponents.queryItems?["n"] = newN
+                    } else {
+                        os_log("n-param solving failed for itag=%{public}i — stream will be throttled", log: log, type: .info, stream.itag)
                     }
                 }
 
@@ -483,13 +501,36 @@ class Extraction {
     }
 #endif
     
-    /// Filter out all audio streams that are not original language (i.e. dubbed)
+    /// Filter out all audio streams that are not original language (i.e. dubbed).
+    /// Uses both `audioIsDefault` flag and display name heuristic (yt-dlp approach).
+    /// YouTube tags the original audio track with audioIsDefault=true;
+    /// the "original" suffix in displayName is a secondary fallback heuristic.
     class func filterOutDubbedAudio(streamManifest: [InnerTube.StreamingData.Format]) -> [InnerTube.StreamingData.Format] {
-        streamManifest.filter { stream in
-            if let audioTrack = stream.audioTrack {
-                return audioTrack.displayName.lowercased().hasSuffix("original")
+        // First check if ANY stream has audioTrack metadata — if none do, this
+        // video is single-language and all streams should be kept as-is.
+        let hasAnyAudioTrack = streamManifest.contains { $0.audioTrack != nil }
+        guard hasAnyAudioTrack else { return streamManifest }
+
+        return streamManifest.filter { stream in
+            guard let audioTrack = stream.audioTrack else {
+                // Streams without audioTrack metadata are video-only or single-language — keep them
+                return true
             }
-            return true
+            // Primary check: audioIsDefault is the authoritative flag from YouTube's API
+            if audioTrack.audioIsDefault {
+                return true
+            }
+            // Fallback: some responses set audioIsDefault=false for the original track
+            // but tag the display name with "original" suffix
+            if audioTrack.displayName.lowercased().hasSuffix("original") {
+                return true
+            }
+            // Edge case: if display name is empty, keep the stream rather than silently drop it.
+            // Better to include a possible dub than to lose the only audio track.
+            if audioTrack.displayName.isEmpty {
+                return true
+            }
+            return false
         }
     }
     
