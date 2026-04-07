@@ -252,11 +252,10 @@ final class StreamExtractionTests: XCTestCase {
 
         XCTAssertFalse(livestreams.isEmpty, "No livestreams found")
 
-        let hlsStream = livestreams.first { $0.streamType == .hls }
-        XCTAssertNotNil(hlsStream, "No HLS livestream found")
+        let hlsStream = try XCTUnwrap(livestreams.first { $0.streamType == .hls }, "No HLS livestream found")
         XCTAssertTrue(
-            hlsStream!.url.absoluteString.contains(".m3u8"),
-            "HLS URL doesn't contain .m3u8: \(hlsStream!.url)"
+            hlsStream.url.absoluteString.contains(".m3u8"),
+            "HLS URL doesn't contain .m3u8: \(hlsStream.url)"
         )
     }
 
