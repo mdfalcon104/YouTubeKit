@@ -150,11 +150,13 @@ public enum AudioCodec: Codec, Equatable {
 
 // MARK: - Audio Codec Rank
 
-/// Ranking of audio codecs for best-stream selection: opus > mp4a > other
+/// Ranking of audio codecs for best-stream selection: mp4a > opus > other.
+/// mp4a (AAC) is preferred because it is natively playable in AVPlayer;
+/// opus requires transcoding or a third-party decoder on Apple platforms.
 public enum AudioCodecRank: Int, Comparable, Sendable {
     case other = 1
-    case mp4a = 2
-    case opus = 3
+    case opus = 2
+    case mp4a = 3
 
     public static func < (lhs: Self, rhs: Self) -> Bool {
         lhs.rawValue < rhs.rawValue

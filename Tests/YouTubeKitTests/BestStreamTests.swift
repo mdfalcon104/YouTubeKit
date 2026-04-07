@@ -240,22 +240,23 @@ final class BestStreamTests: XCTestCase {
         XCTAssertEqual(progressive.audioScoreTuple().primary, 1)
     }
 
-    func testScoreTupleCodecRankingOpusHigherThanMp4a() {
+    func testScoreTupleCodecRankingMp4aHigherThanOpus() {
         let mp4a = makeAudioStream(itag: 140, codec: "mp4a.40.2")
         let opus = makeAudioStream(itag: 251, codec: "opus", ext: "webm")
 
+        // mp4a ranks higher — natively playable in AVPlayer
         XCTAssertGreaterThan(
-            opus.audioScoreTuple().codec,
-            mp4a.audioScoreTuple().codec
+            mp4a.audioScoreTuple().codec,
+            opus.audioScoreTuple().codec
         )
     }
 
-    func testScoreTupleCodecRankingMp4aHigherThanUnknown() {
-        let mp4a = makeAudioStream(itag: 140, codec: "mp4a.40.2")
+    func testScoreTupleCodecRankingOpusHigherThanUnknown() {
+        let opus = makeAudioStream(itag: 251, codec: "opus", ext: "webm")
         let unknown = makeAudioStream(itag: 328, codec: "ec-3")
 
         XCTAssertGreaterThan(
-            mp4a.audioScoreTuple().codec,
+            opus.audioScoreTuple().codec,
             unknown.audioScoreTuple().codec
         )
     }
@@ -274,9 +275,9 @@ final class BestStreamTests: XCTestCase {
     }
 
     func testScoreTupleTieIsNegativeDeltaForNonTarget() {
-        // 384kbps closest target is 256, delta=128, tie=-128
+        // 384kbps closest target is 320, delta=64, tie=-64
         let stream384 = makeAudioStream(itag: 258, codec: "mp4a.40.2")
-        XCTAssertEqual(stream384.audioScoreTuple().tie, -128)
+        XCTAssertEqual(stream384.audioScoreTuple().tie, -64)
     }
 
     func testScoreTupleTieDeltaForMidRangeBitrate() {
@@ -349,8 +350,8 @@ final class BestStreamTests: XCTestCase {
     }
 
     func testAudioCodecRankOrdering() {
-        XCTAssertLessThan(AudioCodecRank.other, AudioCodecRank.mp4a)
-        XCTAssertLessThan(AudioCodecRank.mp4a, AudioCodecRank.opus)
+        XCTAssertLessThan(AudioCodecRank.other, AudioCodecRank.opus)
+        XCTAssertLessThan(AudioCodecRank.opus, AudioCodecRank.mp4a)
     }
 
     // MARK: - isAudioOnly

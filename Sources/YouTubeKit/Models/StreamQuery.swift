@@ -95,7 +95,7 @@ extension Stream {
 
     /// Scoring tuple for audio stream ranking.
     /// Higher values are better for each component.
-    func audioScoreTuple(targets: [Int] = [256, 160, 128, 96, 70, 64, 50, 48])
+    func audioScoreTuple(targets: [Int] = [320, 256, 160, 128, 96, 70, 64, 50, 48])
     -> (primary: Int, codec: Int, tie: Int, kbps: Int) {
         let primary = isAudioOnly ? 2 : 1
         let codec   = audioCodecRank.rawValue
