@@ -137,5 +137,25 @@ public struct Stream: Sendable {
     public var videoResolution: Int? {
         itag.videoResolution
     }
-    
+
+    /// Whether the stream contains only audio (no video track)
+    public var isAudioOnly: Bool {
+        includesAudioTrack && !includesVideoTrack
+    }
+
+    /// Audio bitrate in kbps from the itag table, 0 if unknown
+    public var audioKbps: Int {
+        itag.audioBitrate ?? 0
+    }
+
+    /// Codec quality rank for audio stream selection
+    public var audioCodecRank: AudioCodecRank {
+        guard let codec = audioCodec?.baseCodec else { return .other }
+        switch codec {
+        case .opus: return .opus
+        case .mp4a: return .mp4a
+        default: return .other
+        }
+    }
+
 }

@@ -148,6 +148,19 @@ public enum AudioCodec: Codec, Equatable {
     
 }
 
+// MARK: - Audio Codec Rank
+
+/// Ranking of audio codecs for best-stream selection: opus > mp4a > other
+public enum AudioCodecRank: Int, Comparable, Sendable {
+    case other = 1
+    case mp4a = 2
+    case opus = 3
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        lhs.rawValue < rhs.rawValue
+    }
+}
+
 // -
 
 extension Codec {

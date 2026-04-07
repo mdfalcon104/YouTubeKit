@@ -70,5 +70,38 @@ public extension Collection where Element == Stream {
     func filterVideoAndAudio() -> [Stream] {
         filter { $0.includesVideoAndAudioTrack }
     }
-    
+
+    /// Pick the best audio-only natively-playable stream.
+    /// Ranking: audio-only > muxed, codec (opus > mp4a > other), closest to target bitrate, then highest kbps.
+    func pickBestStream() -> Stream? {
+        let candidates = filterAudioOnly()
+            .filter { $0.isNativelyPlayable }
+        guard !candidates.isEmpty else { return nil }
+
+        return candidates.max { lhs, rhs in
+            let a = lhs.audioScoreTuple()
+            let b = rhs.audioScoreTuple()
+            if a.primary != b.primary { return a.primary < b.primary }
+            if a.codec   != b.codec   { return a.codec   < b.codec }
+            if a.tie     != b.tie     { return a.tie     < b.tie }
+            return a.kbps < b.kbps
+        }
+    }
+
+}
+
+@available(iOS 13.0, watchOS 6.0, tvOS 13.0, macOS 10.15, *)
+extension Stream {
+
+    /// Scoring tuple for audio stream ranking.
+    /// Higher values are better for each component.
+    func audioScoreTuple(targets: [Int] = [256, 160, 128, 96, 70, 64, 50, 48])
+    -> (primary: Int, codec: Int, tie: Int, kbps: Int) {
+        let primary = isAudioOnly ? 2 : 1
+        let codec   = audioCodecRank.rawValue
+        let kbps    = audioKbps
+        let delta   = targets.map { abs(kbps - $0) }.min() ?? .max
+        return (primary, codec, -delta, kbps)
+    }
+
 }
