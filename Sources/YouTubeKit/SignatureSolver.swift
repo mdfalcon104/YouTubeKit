@@ -149,9 +149,18 @@ class SignatureSolver {
     
     func batchSolve(request: SolveRequest) throws -> SolveResponse {
 
+        // Filter out empty challenge strings — the solver may return garbage for them
+        let filteredNInputs = request.nInputs.filter { !$0.isEmpty }
+        let filteredSigInputs = request.sigInputs.filter { !$0.isEmpty }
+
+        // Short-circuit if nothing to solve — avoids JS evaluation overhead
+        if filteredNInputs.isEmpty && filteredSigInputs.isEmpty {
+            return SolveResponse(nMap: [:], sigMap: [:])
+        }
+
         let requests = [
-            Request(type: .n, challenges: request.nInputs),
-            Request(type: .sig, challenges: request.sigInputs)
+            Request(type: .n, challenges: filteredNInputs),
+            Request(type: .sig, challenges: filteredSigInputs)
         ]
 
         let input = Input(
@@ -163,6 +172,12 @@ class SignatureSolver {
         )
 
         let response = try solve(with: input)
+
+        // Validate response count — zip silently drops items if response has fewer
+        // entries than requests, causing missing signatures with no error.
+        if response.responses.count < requests.count {
+            os_log("Solver returned %{public}i responses for %{public}i requests — partial result", log: Self.log, type: .error, response.responses.count, requests.count)
+        }
 
         var nMap: [String: String] = [:]
         var sigMap: [String: String] = [:]
