@@ -18,12 +18,19 @@ class RemoteYouTubeClient {
     
     func extractStreams(forVideoID videoID: String) async throws -> [RemoteStream] {
 
-        var urlComponents = URLComponents(url: serverURL.appendingPathComponent("v1"), resolvingAgainstBaseURL: false)!
+        // Guard URL construction instead of force-unwrap — a malformed serverURL
+        // should throw a clear error, not crash the app (audit HIGH).
+        guard var urlComponents = URLComponents(url: serverURL.appendingPathComponent("v1"), resolvingAgainstBaseURL: false) else {
+            throw YouTubeKitError.extractError
+        }
         urlComponents.queryItems = [
             URLQueryItem(name: "videoID", value: videoID)
         ]
 
-        var websocketRequest = URLRequest(url: urlComponents.url!)
+        guard let wsURL = urlComponents.url else {
+            throw YouTubeKitError.extractError
+        }
+        var websocketRequest = URLRequest(url: wsURL)
 
         // Add app identity header if available
         if let appIdentity = AppIdentity.getCurrent() {
@@ -102,29 +109,36 @@ class RemoteYouTubeClient {
         
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        
+
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .convertToSnakeCase
-        
-        while true {
+
+        // Guard against infinite loop: cap at 50 round-trips.
+        // A normal extraction needs ~5-10 round-trips. If the server sends
+        // 50+ urlRequest messages without a result, it's misbehaving.
+        let maxRoundTrips = 50
+        var roundTrips = 0
+
+        while roundTrips < maxRoundTrips {
+            roundTrips += 1
             let message = try await task.receive()
             let messageType = try decoder.decode(ServerMessageBase.self, from: message).type
-            
+
             switch messageType {
             case .result:
                 let serverMessage = try decoder.decode(ServerMessage<[RemoteStream]>.self, from: message)
                 return serverMessage.content
-                
+
             case .urlRequest:
                 let serverMessage = try decoder.decode(ServerMessage<RemoteURLRequest>.self, from: message)
                 let request = serverMessage.content
-                
+
                 if !request.allowRedirects || request.applyCookiesOnRedirect {
                     let configuration = URLSessionConfiguration.default
                     let delegate = ConfigurableURLSessionDelegate(allowsRedirect: request.allowRedirects, applyCookiesOnRedirect: request.applyCookiesOnRedirect, saveIntermediateResponses: request.saveIntermediateResponses)
                     let session = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
                     let (data, response) = try await session.data(for: request.urlRequest)
-                    
+
                     var remoteResponse = RemoteURLResponse(id: request.id, data: data, response: response)
                     if request.saveIntermediateResponses {
                         remoteResponse.intermediates = delegate.intermediateResponses.map { RemoteURLResponse(id: request.id, data: Data(), response: $0) }
@@ -136,6 +150,9 @@ class RemoteYouTubeClient {
                 }
             }
         }
+
+        // Exceeded max round-trips without getting a result — server is misbehaving
+        throw YouTubeKitError.extractError
     }
     
 }
