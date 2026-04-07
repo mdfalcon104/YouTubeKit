@@ -170,11 +170,16 @@ class InnerTube {
     }
     
     private var baseParams: [URLQueryItem] {
-        [
-            URLQueryItem(name: "key", value: apiKey),
+        // Only include API key when non-empty — consistent with player() endpoint.
+        // Clients like ios/androidVR have empty apiKey by design.
+        var items = [
             URLQueryItem(name: "contentCheckOk", value: "true"),
             URLQueryItem(name: "racyCheckOk", value: "true")
         ]
+        if !apiKey.isEmpty {
+            items.insert(URLQueryItem(name: "key", value: apiKey), at: 0)
+        }
+        return items
     }
     
     private func callAPI<D: Encodable, T: Decodable>(endpoint: String, query: [URLQueryItem], object: D) async throws -> T {

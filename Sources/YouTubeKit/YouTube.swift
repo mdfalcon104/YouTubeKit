@@ -383,9 +383,19 @@ public class YouTube {
                 }
             }
 
-            let signatureTimestamp = try await signatureTimestamp
+            // Resolve STS lazily — mobile clients (ios, androidVR) don't need JS player
+            // or STS, so a JS fetch failure should not block them. Web clients do need
+            // STS for signature validation, so we try to resolve it but tolerate failure.
+            let sts: Int?
+            do {
+                sts = try await signatureTimestamp
+            } catch {
+                os_log("STS fetch failed — mobile clients will proceed without it: %{public}@", log: log, type: .info, error.localizedDescription)
+                sts = nil
+            }
+
             let ytcfg = try await ytcfg
-            
+
             // Default client priority — synced with yt-dlp defaults (April 2026).
             // .web REMOVED: since Feb 2025 the WEB client returns SABR-only streams
             // (serverAbrStreamingUrl) with no downloadable HTTPS format URLs.
@@ -393,10 +403,10 @@ public class YouTube {
             // .androidVR is the primary — pinned at v1.65.10, no PO token needed, always returns URLs.
             // .webSafari kept as fallback — may return some formats or HLS manifest.
             let innertubeClients: [InnerTube.ClientType] = [.androidVR, .ios, .webSafari]
-            
+
             let results: [Result<InnerTube.VideoInfo, Error>] = await innertubeClients.concurrentMap { [videoID, useOAuth, allowOAuthCache] client in
-                let innertube = InnerTube(client: client, signatureTimestamp: signatureTimestamp, ytcfg: ytcfg, useOAuth: useOAuth, allowCache: allowOAuthCache)
-                
+                let innertube = InnerTube(client: client, signatureTimestamp: sts, ytcfg: ytcfg, useOAuth: useOAuth, allowCache: allowOAuthCache)
+
                 do {
                     let innertubeResponse = try await innertube.player(videoID: videoID)
                     return .success(innertubeResponse)
