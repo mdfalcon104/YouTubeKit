@@ -72,9 +72,15 @@ public class YouTube {
     
     private let log = OSLog(YouTube.self)
     
+    /// Regex for valid YouTube video IDs: exactly 11 chars of [A-Za-z0-9_-]
+    private static let videoIDPattern = NSRegularExpression(#"^[A-Za-z0-9_-]{11}$"#)
+
     /// - parameter methods: Methods used to extract streams from the video - ordered by priority (Default: `local` on iOS, macOS, tvOS, visionOS; `remote` on watchOS)
     public init(videoID: String, proxies: [String: URL] = [:], useOAuth: Bool = false, allowOAuthCache: Bool = false, methods: [ExtractionMethod] = .default) {
-        self.videoID = videoID
+        // Accept the raw videoID — don't truncate, which could silently fetch the wrong video.
+        // Invalid IDs are caught at checkAvailability() with a clear .videoUnavailable error.
+        // We percent-encode it to prevent URL construction failures downstream.
+        self.videoID = videoID.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? videoID
         self.useOAuth = useOAuth
         self.allowOAuthCache = allowOAuthCache
         // TODO: install proxies if needed
@@ -97,30 +103,42 @@ public class YouTube {
     }
     
     
+    /// Full browser User-Agent for watch/embed page fetches.
+    /// YouTube increasingly blocks minimal UAs ("Mozilla/5.0" alone) as bot-like.
+    /// Using a realistic Safari UA matches yt-dlp's web_safari client and avoids
+    /// "Sign in to confirm you're not a bot" blocks (yt-dlp issue #14707).
+    private static let browserUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15"
+
     private var watchHTML: String {
         get async throws {
             if let cached = _watchHTML {
                 return cached
             }
             var request = URLRequest(url: extendedWatchURL)
-            request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+            // Use full browser UA — minimal "Mozilla/5.0" triggers bot detection on some IPs
+            request.setValue(Self.browserUserAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("en-US,en", forHTTPHeaderField: "accept-language")
             request.httpShouldHandleCookies = false
+            // Timeout prevents indefinite hang on network stalls (audit P0)
+            request.timeoutInterval = 30
             let (data, _) = try await URLSession.shared.data(for: request)
             _watchHTML = String(data: data, encoding: .utf8) ?? ""
             return _watchHTML!
         }
     }
-    
+
     private var embedHTML: String {
         get async throws {
             if let cached = _embedHTML {
                 return cached
             }
             var request = URLRequest(url: embedURL)
-            request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+            // Match the same full browser UA used for watch page
+            request.setValue(Self.browserUserAgent, forHTTPHeaderField: "User-Agent")
             request.setValue("en-US,en", forHTTPHeaderField: "accept-language")
             request.httpShouldHandleCookies = false
+            // Timeout prevents indefinite hang on network stalls (audit P0)
+            request.timeoutInterval = 30
             let (data, _) = try await URLSession.shared.data(for: request)
             _embedHTML = String(data: data, encoding: .utf8) ?? ""
             return _embedHTML!
@@ -172,13 +190,20 @@ public class YouTube {
             if let cached = _jsURL {
                 return cached
             }
-            
+
+            let jsString: String
             if try await ageRestricted {
-                _jsURL = try await URL(string: Extraction.jsURL(html: embedHTML))!
+                jsString = try await Extraction.jsURL(html: embedHTML)
             } else {
-                _jsURL = try await URL(string: Extraction.jsURL(html: watchHTML))!
+                jsString = try await Extraction.jsURL(html: watchHTML)
             }
-            return _jsURL!
+            // Guard instead of force-unwrap — a malformed player path from YouTube
+            // should throw a clear error, not crash the app (audit HIGH S2).
+            guard let url = URL(string: jsString) else {
+                throw YouTubeKitError.extractError
+            }
+            _jsURL = url
+            return url
         }
     }
     
@@ -207,8 +232,14 @@ public class YouTube {
             if let cached = _signatureTimestamp {
                 return cached
             }
-            
-            _signatureTimestamp = try await Extraction.extractSignatureTimestamp(fromJS: js)
+
+            let sts = try await Extraction.extractSignatureTimestamp(fromJS: js)
+            if sts == nil {
+                // STS extraction failed — log but don't fail. YouTube may still respond
+                // without it, but some clients (especially web) may return restricted data.
+                os_log("Could not extract signatureTimestamp from player JS — API responses may be limited", log: log, type: .info)
+            }
+            _signatureTimestamp = sts
             return _signatureTimestamp
         }
     }
@@ -355,7 +386,13 @@ public class YouTube {
             let signatureTimestamp = try await signatureTimestamp
             let ytcfg = try await ytcfg
             
-            let innertubeClients: [InnerTube.ClientType] = [.androidVR, .webSafari, .web]
+            // Default client priority — synced with yt-dlp defaults (April 2026).
+            // .web REMOVED: since Feb 2025 the WEB client returns SABR-only streams
+            // (serverAbrStreamingUrl) with no downloadable HTTPS format URLs.
+            // .ios ADDED: still returns full HTTPS format URLs without requiring JS player.
+            // .androidVR is the primary — pinned at v1.65.10, no PO token needed, always returns URLs.
+            // .webSafari kept as fallback — may return some formats or HLS manifest.
+            let innertubeClients: [InnerTube.ClientType] = [.androidVR, .ios, .webSafari]
             
             let results: [Result<InnerTube.VideoInfo, Error>] = await innertubeClients.concurrentMap { [videoID, useOAuth, allowOAuthCache] client in
                 let innertube = InnerTube(client: client, signatureTimestamp: signatureTimestamp, ytcfg: ytcfg, useOAuth: useOAuth, allowCache: allowOAuthCache)
@@ -385,14 +422,24 @@ public class YouTube {
                 videoInfos.append(watchVideoInfo)
             }
             
-            // remove video infos with incorrect videoID
-            for (i, videoInfo) in videoInfos.enumerated() where videoInfo.videoDetails?.videoId != videoID {
-                os_log("Skipping player response from client %{public}i. Got player response for %{public}@ instead of %{public}@", log: log, type: .info, i, videoInfo.videoDetails?.videoId ?? "nil", videoID)
+            // Remove video infos with incorrect videoID — YouTube sometimes returns a
+            // different video (e.g. a default/error video) when the requested one is unavailable.
+            let originalCount = videoInfos.count
+            videoInfos = videoInfos.filter { info in
+                let matches = info.videoDetails?.videoId == videoID
+                if !matches {
+                    os_log("Skipping player response — got videoId=%{public}@ instead of %{public}@", log: log, type: .info, info.videoDetails?.videoId ?? "nil", videoID)
+                }
+                return matches
             }
-            videoInfos = videoInfos.filter { $0.videoDetails?.videoId == videoID }
-            
+
             if videoInfos.isEmpty {
-                throw errors.first ?? YouTubeKitError.extractError
+                // All responses had wrong videoId — this likely means the video doesn't exist
+                // or all clients returned error/redirect responses. Log how many were discarded.
+                if originalCount > 0 {
+                    os_log("All %{public}i client responses returned wrong videoId", log: log, type: .error, originalCount)
+                }
+                throw errors.first ?? YouTubeKitError.videoUnavailable
             }
             
             _videoInfos = videoInfos
@@ -432,13 +479,5 @@ public class YouTube {
 
         _videoInfos = [innertubeResponse]
     }
-    
-    /// Interface to query both adaptive (DASH) and progressive streams.
-    /*public var streams: StreamQuery {
-        get async throws {
-            //try await checkAvailability()
-            return StreamQuery(fmtStreams: try await fmtStreams)
-        }
-    }*/
     
 }
