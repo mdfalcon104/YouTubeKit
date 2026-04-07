@@ -25,22 +25,28 @@ extension YouTubeKitError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
+        case .maxRetriesExceeded:
+            return NSLocalizedString("All extraction methods failed", comment: "")
+        case .htmlParseError:
+            return NSLocalizedString("Failed to parse YouTube page HTML", comment: "")
+        case .extractError:
+            return NSLocalizedString("Failed to extract video data", comment: "")
+        case .regexMatchError:
+            return NSLocalizedString("Required pattern not found in page data", comment: "")
         case .videoUnavailable:
             return NSLocalizedString("Video unavailable", comment: "")
-
         case .videoAgeRestricted:
             return NSLocalizedString("Video age restricted", comment: "")
-
         case .liveStreamError:
             return NSLocalizedString("Can't extract video from livestream", comment: "")
-
         case .videoPrivate:
             return NSLocalizedString("Video is private", comment: "")
-
+        case .recordingUnavailable:
+            return NSLocalizedString("Recording unavailable", comment: "")
         case .membersOnly:
             return NSLocalizedString("Video is members only", comment: "")
-
-        default: return nil
+        case .videoRegionBlocked:
+            return NSLocalizedString("Video is not available in your region", comment: "")
         }
     }
 

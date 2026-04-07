@@ -46,7 +46,10 @@ extension String {
     func stripTrailing(_ characters: String) -> String {
         var result = self
         let characterSet = CharacterSet(charactersIn: characters)
-        while let last = result.last, characterSet.contains(last.unicodeScalars.first!) {
+        // Safe unwrap instead of force-unwrap on unicodeScalars (audit MEDIUM).
+        while let last = result.last,
+              let scalar = last.unicodeScalars.first,
+              characterSet.contains(scalar) {
             result.removeLast()
         }
         return result
