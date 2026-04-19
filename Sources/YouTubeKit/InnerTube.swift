@@ -20,12 +20,15 @@ class InnerTube {
         var playerParams: String? = nil
 
         var androidSdkVersion: Int? = nil
+        var deviceMake: String? = nil
         var deviceModel: String? = nil
-        
+        var osName: String? = nil
+        var osVersion: String? = nil
+
         var context: Context {
             // Include hl/timeZone/utcOffsetMinutes — YouTube requires these for consistent responses.
             // Without them, some regions may get restricted or differently-formatted data (yt-dlp default).
-            let client = Context.ContextClient(clientName: name, clientVersion: version, clientScreen: screen, androidSdkVersion: androidSdkVersion, deviceModel: deviceModel, hl: "en", timeZone: "UTC", utcOffsetMinutes: 0)
+            let client = Context.ContextClient(clientName: name, clientVersion: version, clientScreen: screen, androidSdkVersion: androidSdkVersion, deviceMake: deviceMake, deviceModel: deviceModel, osName: osName, osVersion: osVersion, hl: "en", timeZone: "UTC", utcOffsetMinutes: 0)
             let thirdParty = screen == "EMBED" ? Context.ThirdParty(embedUrl: "https://www.youtube.com/") : nil
             return Context(client: client, thirdParty: thirdParty)
         }
@@ -48,7 +51,12 @@ class InnerTube {
             let clientVersion: String
             let clientScreen: String?
             let androidSdkVersion: Int?
+            // yt-dlp sends these device/OS fields for mobile clients (ANDROID, IOS, ANDROID_VR).
+            // YouTube validates them against clientName/Version — mismatch can yield empty responses.
+            let deviceMake: String?
             let deviceModel: String?
+            let osName: String?
+            let osVersion: String?
             // yt-dlp sends these locale fields in every request (Jan 2026).
             // YouTube uses them to determine response format; missing fields may cause
             // different/restricted responses for some regions.
@@ -72,14 +80,14 @@ class InnerTube {
         ClientType.webSafari: Client(name: "WEB", version: "2.20260114.08.00", screen: nil, apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8", internalID: 1, userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.5 Safari/605.1.15,gzip(gfe)"),
         // ANDROID — bumped from 20.10.38 to 21.02.35 (Jan 2026 yt-dlp #15726).
         // YouTube deprecated 20.x Android versions; old versions may get empty/blocked responses.
-        ClientType.android: Client(name: "ANDROID", version: "21.02.35", screen: nil, apiKey: "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w", internalID: 3, userAgent: "com.google.android.youtube/21.02.35 (Linux; U; Android 11) gzip", playerParams: "CgIQBg==", androidSdkVersion: 30),
+        ClientType.android: Client(name: "ANDROID", version: "21.02.35", screen: nil, apiKey: "AIzaSyA8eiZmM1FaDVjRy-df2KTyQ_vz_yYM39w", internalID: 3, userAgent: "com.google.android.youtube/21.02.35 (Linux; U; Android 11) gzip", playerParams: "CgIQBg==", androidSdkVersion: 30, osName: "Android", osVersion: "11"),
         // androidSdkless REMOVED — YouTube fully deprecated this client in Jan 2026 (yt-dlp #15726).
         // ANDROID_MUSIC — version kept; not typically used for stream extraction.
         ClientType.androidMusic: Client(name: "ANDROID_MUSIC", version: "5.16.51", screen: nil, apiKey: "AIzaSyAOghZGza2MQSZkY_zfZ370N-PUdXEo8AI", internalID: 21, userAgent: "com.google.android.apps.youtube.music/5.16.51 (Linux; U; Android 11) gzip", playerParams: "CgIQBg==", androidSdkVersion: 30),
         // ANDROID_VR — pinned at 1.65.10 intentionally (yt-dlp default).
         // Versions >1.65 return SABR-only streams. This is the safest client for stream URLs:
         // no PO token required, no JS player needed, returns full HTTPS format URLs.
-        ClientType.androidVR: Client(name: "ANDROID_VR", version: "1.65.10", screen: nil, apiKey: "", internalID: 28, userAgent: "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip", androidSdkVersion: 32, deviceModel: "Quest 3"),
+        ClientType.androidVR: Client(name: "ANDROID_VR", version: "1.65.10", screen: nil, apiKey: "", internalID: 28, userAgent: "com.google.android.apps.youtube.vr.oculus/1.65.10 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip", androidSdkVersion: 32, deviceMake: "Oculus", deviceModel: "Quest 3", osName: "Android", osVersion: "12L"),
         // WEB_EMBEDDED_PLAYER — version already current.
         ClientType.webEmbed: Client(name: "WEB_EMBEDDED_PLAYER", version: "1.20260115.01.00", screen: "EMBED", apiKey: "", internalID: 56, userAgent: "Mozilla/5.0"),
         // WEB_CREATOR — bumped from 1.20250922.03.00 to 1.20260114.05.00 (Jan 2026 yt-dlp).
@@ -89,19 +97,21 @@ class InnerTube {
         ClientType.androidEmbed: Client(name: "ANDROID_EMBEDDED_PLAYER", version: "18.11.34", screen: "EMBED", apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8", internalID: 3, userAgent: "com.google.android.youtube/18.11.34 (Linux; U; Android 11) gzip"),
         // TVHTML5 — bumped from 7.20250923.13.00 to 7.20260114.12.00 (Jan 2026 yt-dlp).
         // TV client still returns HTTPS format URLs (not SABR-only).
-        ClientType.tv: Client(name: "TVHTML5", version: "7.20260114.12.00", screen: nil, apiKey: "", internalID: 7, userAgent: "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version (unlike Gecko) cobalt/26 (unlike Gecko)"),
+        // UA synced with Cobalt 25 LTS format per yt-dlp master.
+        ClientType.tv: Client(name: "TVHTML5", version: "7.20260114.12.00", screen: nil, apiKey: "", internalID: 7, userAgent: "Mozilla/5.0 (ChromiumStylePlatform) Cobalt/25.lts.30.1034943-gold (unlike Gecko), Unknown_TV_Unknown_0/Unknown (Unknown, Unknown)"),
         // TVHTML5_SIMPLY_EMBEDDED_PLAYER — kept for embed fallback.
         ClientType.tvEmbed: Client(name: "TVHTML5_SIMPLY_EMBEDDED_PLAYER", version: "2.0", screen: "EMBED", apiKey: "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8", internalID: 85, userAgent: "Mozilla/5.0"),
         // IOS — bumped from 20.10.4 to 21.02.3 (Jan 2026 yt-dlp #15726).
         // YouTube deprecated 20.x iOS versions; old versions may get empty/blocked responses.
         // Returns HTTPS format URLs without requiring JS player.
-        ClientType.ios: Client(name: "IOS", version: "21.02.3", screen: nil, apiKey: "", internalID: 5, userAgent: "com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)", deviceModel: "iPhone16,2"),
+        ClientType.ios: Client(name: "IOS", version: "21.02.3", screen: nil, apiKey: "", internalID: 5, userAgent: "com.google.ios.youtube/21.02.3 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)", deviceMake: "Apple", deviceModel: "iPhone16,2", osName: "iPhone", osVersion: "18.3.2.22D82"),
         // IOS_MUSIC — kept for potential music content extraction.
         ClientType.iosMusic: Client(name: "IOS_MUSIC", version: "5.21", screen: nil, apiKey: "AIzaSyBAETezhkwP0ZWA02RsqT1zu78Fpt0bC_s", internalID: 26, userAgent: "com.google.ios.youtubemusic/5.21 (iPhone14,3; U; CPU iOS 15_6 like Mac OS X)", deviceModel: "iPhone14,3"),
         // MEDIA_CONNECT_FRONTEND — special client used as last-resort fallback for progressive streams.
         ClientType.mediaConnectFrontend: Client(name: "MEDIA_CONNECT_FRONTEND", version: "0.1", screen: nil, apiKey: "", internalID: 0, userAgent: nil),
         // MWEB — bumped from 2.20250925.01.00 to 2.20260115.01.00 (Jan 2026 yt-dlp).
-        ClientType.mWeb: Client(name: "MWEB", version: "2.20260115.01.00", screen: nil, apiKey: "", internalID: 2, userAgent: nil)
+        // iPad Safari UA synced with yt-dlp master; previously no PO token required with this UA.
+        ClientType.mWeb: Client(name: "MWEB", version: "2.20260115.01.00", screen: nil, apiKey: "", internalID: 2, userAgent: "Mozilla/5.0 (iPad; CPU OS 16_7_10 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1,gzip(gfe)")
     ]
     
     enum ClientType: String {
