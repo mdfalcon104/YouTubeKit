@@ -1,9 +1,27 @@
 import XCTest
 @testable import YouTubeKit
 
+/// Live E2E tests that hit the YouTube API. All tests except the pure-offline
+/// `testObjectParsingFromStartpoint` are gated behind `YOUTUBEKIT_E2E` to keep
+/// `swift test` deterministic (CDN flakes, geo-blocks, and auth-gated videos
+/// cannot be validated from CI without credentials).
+///
+/// Run with: `YOUTUBEKIT_E2E=1 swift test --filter YouTubeKitTests`
 @available(iOS 15.0, watchOS 8.0, tvOS 15.0, macOS 12.0, *)
 final class YouTubeKitTests: XCTestCase {
-    
+
+    override func setUp() async throws {
+        try await super.setUp()
+        // Allow the offline parsing-performance test to always run.
+        if name.contains("testObjectParsingFromStartpoint") {
+            return
+        }
+        try XCTSkipUnless(
+            ProcessInfo.processInfo.environment["YOUTUBEKIT_E2E"] != nil,
+            "Set YOUTUBEKIT_E2E=1 to run live E2E tests"
+        )
+    }
+
     func testVideoUnavailable() async {
         let youtube = YouTube(videoID: "cTsNJNx7plQ")
         do {

@@ -55,11 +55,11 @@ class Parser {
     
     class func findJavascriptFunctionFromStartpoint(html fullHTML: String, startPoint: String.Index) throws -> String {
         let html = String(fullHTML[startPoint...])
-        guard ["{", "["].contains(html.first ?? " ") else {
-            fatalError()
+        guard let firstChar = html.first, firstChar == "{" || firstChar == "[" else {
+            throw YouTubeKitError.regexMatchError
         }
-        
-        var stack = [html.first!]
+
+        var stack = [firstChar]
         var regexStack: [Character] = []
         var i = html.index(after: html.startIndex)
         

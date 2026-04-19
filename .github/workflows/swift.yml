@@ -27,6 +27,10 @@ jobs:
     - name: Build ${{ matrix.platform.name }}
       run: xcodebuild build -scheme YouTubeKit -destination '${{ matrix.platform.destination }}' -skipPackagePluginValidation
 
-    # temporarily disabled because YouTube blocked GitHub actions url
-    #- name: Run tests
-    #  run: swift test -v
+    # Offline tests only — signature/nsig fixtures, parsing, extraction regex, codec ranking.
+    # E2E tests that hit YouTube are gated behind YOUTUBEKIT_E2E and skipped here because
+    # YouTube blocks GitHub Actions IP ranges. Run E2E locally before releases:
+    #   YOUTUBEKIT_E2E=1 swift test
+    - name: Run offline tests (macOS only)
+      if: matrix.platform.name == 'macOS'
+      run: swift test
