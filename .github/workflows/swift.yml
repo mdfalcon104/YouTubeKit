@@ -1,6 +1,14 @@
 name: Swift Unit Tests
 
-on: push
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      run_e2e:
+        description: 'Run live E2E tests (may fail — YouTube blocks GH Actions IPs)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build:
@@ -32,5 +40,14 @@ jobs:
     # YouTube blocks GitHub Actions IP ranges. Run E2E locally before releases:
     #   YOUTUBEKIT_E2E=1 swift test
     - name: Run offline tests (macOS only)
-      if: matrix.platform.name == 'macOS'
+      if: matrix.platform.name == 'macOS' && inputs.run_e2e != true
       run: swift test
+
+    # Opt-in live E2E run via `workflow_dispatch` → run_e2e=true. Expect failures
+    # from CDN reachability checks because YouTube blocks GH Actions IP ranges.
+    - name: Run E2E tests (opt-in, macOS only)
+      if: matrix.platform.name == 'macOS' && inputs.run_e2e == true
+      env:
+        YOUTUBEKIT_E2E: '1'
+      run: swift test
+      continue-on-error: true
