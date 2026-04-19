@@ -55,17 +55,22 @@ class Extraction {
     }
     
     /// Get the YouTube player base JavaScript path.
-    /// YouTube serves multiple player JS variants (main, tcc, tce, tv, phone, etc.).
-    /// The patterns below cover all known URL formats as of April 2026 (synced with yt-dlp).
+    /// YouTube serves multiple player JS variants per yt-dlp's `_PLAYER_JS_VARIANT_MAP`
+    /// (main, tcc, tce, es5, es6, es6_tcc, es6_tce, tv, tv_es6, phone, house). The patterns
+    /// below cover all variants — including dash-containing TV paths and non-`base.js` suffixes.
     class func getYTPlayerJS(html: String) throws -> String {
         let jsURLPatterns = [
-            // Standard player URL format — e.g. /s/player/9f4cc5e4/player_ias.vflset/en_US/base.js
-            NSRegularExpression(#"(/s/player/[\w\d]+/[\w\d_/.]+/base\.js)"#),
-            // Full absolute URL variant — sometimes found in embed HTML with https://www.youtube.com prefix
-            NSRegularExpression(#"(https?://(?:www\.)?youtube\.com/s/player/[\w\d]+/[\w\d_/.]+/base\.js)"#),
-            // TV player variant — yt-dlp defaults to tv variant since Feb 2026 (#15818)
-            // because the main variant's sig function can be harder to extract.
-            NSRegularExpression(#"(/s/player/[\w\d]+/tv[^"]*?/base\.js)"#)
+            // Unified variant pattern — matches any player JS URL, including:
+            //   /s/player/{id}/player_ias.vflset/en_US/base.js
+            //   /s/player/{id}/player_ias_tce.vflset/en_US/base.js
+            //   /s/player/{id}/player_es6.vflset/en_US/base.js
+            //   /s/player/{id}/tv-player-ias.vflset/tv-player-ias.js
+            //   /s/player/{id}/tv-player-es6.vflset/tv-player-es6.js
+            //   /s/player/{id}/player-plasma-ias-phone-en_US.vflset/base.js
+            // Allows word chars, dashes, dots, underscores and slashes in the path.
+            NSRegularExpression(#"(/s/player/[a-fA-F0-9]{8,}/[\w\-/.]+\.js)"#),
+            // Full absolute URL variant — sometimes found in embed HTML with https://www.youtube.com prefix.
+            NSRegularExpression(#"(https?://(?:www\.)?youtube\.com/s/player/[a-fA-F0-9]{8,}/[\w\-/.]+\.js)"#)
         ]
 
         for pattern in jsURLPatterns {

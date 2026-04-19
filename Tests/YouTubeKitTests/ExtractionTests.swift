@@ -23,6 +23,36 @@ final class ExtractionTests: XCTestCase {
         XCTAssertEqual(jsURL, "https://youtube.com/s/player/6c5cb4f4/player_ias.vflset/en_US/base.js")
     }
 
+    func testGetYTPlayerJSMatchesMainVariant() throws {
+        let html = #"<script src="/s/player/6c5cb4f4/player_ias.vflset/en_US/base.js"></script>"#
+        let path = try Extraction.getYTPlayerJS(html: html)
+        XCTAssertEqual(path, "/s/player/6c5cb4f4/player_ias.vflset/en_US/base.js")
+    }
+
+    func testGetYTPlayerJSMatchesTVVariant() throws {
+        let html = #"<script src="/s/player/76ad2fe8/tv-player-ias.vflset/tv-player-ias.js"></script>"#
+        let path = try Extraction.getYTPlayerJS(html: html)
+        XCTAssertEqual(path, "/s/player/76ad2fe8/tv-player-ias.vflset/tv-player-ias.js")
+    }
+
+    func testGetYTPlayerJSMatchesTVEs6Variant() throws {
+        let html = #"<script src="/s/player/631d3938/tv-player-es6.vflset/tv-player-es6.js"></script>"#
+        let path = try Extraction.getYTPlayerJS(html: html)
+        XCTAssertEqual(path, "/s/player/631d3938/tv-player-es6.vflset/tv-player-es6.js")
+    }
+
+    func testGetYTPlayerJSMatchesEs6Variant() throws {
+        let html = #"<script src="/s/player/010fbc8d/player_es6.vflset/en_US/base.js"></script>"#
+        let path = try Extraction.getYTPlayerJS(html: html)
+        XCTAssertEqual(path, "/s/player/010fbc8d/player_es6.vflset/en_US/base.js")
+    }
+
+    func testGetYTPlayerJSMatchesPhoneVariant() throws {
+        let html = #"<script src="/s/player/20830619/player-plasma-ias-phone-en_US.vflset/base.js"></script>"#
+        let path = try Extraction.getYTPlayerJS(html: html)
+        XCTAssertEqual(path, "/s/player/20830619/player-plasma-ias-phone-en_US.vflset/base.js")
+    }
+
     func testSignatureTimestampUsesExtractedValue() throws {
         let js = "signatureTimestamp:20515"
         let signatureTimestamp = Extraction.extractSignatureTimestamp(fromJS: js)
