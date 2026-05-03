@@ -392,13 +392,26 @@ public class YouTube {
 
             let ytcfg = try await ytcfg
 
-            // Default client priority — synced with yt-dlp defaults (April 2026).
-            // .web REMOVED: since Feb 2025 the WEB client returns SABR-only streams
-            // (serverAbrStreamingUrl) with no downloadable HTTPS format URLs.
-            // .ios ADDED: still returns full HTTPS format URLs without requiring JS player.
-            // .androidVR is the primary — pinned at v1.65.10, no PO token needed, always returns URLs.
-            // .webSafari kept as fallback — may return some formats or HLS manifest.
-            let innertubeClients: [InnerTube.ClientType] = [.androidVR, .ios, .webSafari]
+            // Default client priority — tuned for AVPlayer playback on
+            // iOS / macOS clients of this fork (Drumtify One).
+            //
+            // .ios FIRST: returns HTTPS format URLs whose `c=IOS` query
+            //   binding lets AVPlayer's segment requests succeed —
+            //   ANDROID_VR URLs frequently 403 because the signed token
+            //   is pinned to the extraction-time IP / session and
+            //   AVPlayer's networking can't replay that handshake.
+            // .androidVR SECOND: kept as a fallback for itags only
+            //   served by ANDROID_VR (rare) and for non-AVPlayer
+            //   downstream consumers.
+            // .webSafari LAST: HLS manifest fallback.
+            // .web REMOVED: since Feb 2025 the WEB client returns
+            //   SABR-only streams (serverAbrStreamingUrl) with no
+            //   downloadable HTTPS format URLs.
+            //
+            // Dedup-by-itag means the FIRST client that emits a given
+            // itag wins, so ordering here directly controls which
+            // client's URL ends up in `streams`.
+            let innertubeClients: [InnerTube.ClientType] = [.ios, .androidVR, .webSafari]
 
             let results: [Result<InnerTube.VideoInfo, Error>] = await innertubeClients.concurrentMap { [videoID, useOAuth, allowOAuthCache] client in
                 let innertube = InnerTube(client: client, signatureTimestamp: sts, ytcfg: ytcfg, useOAuth: useOAuth, allowCache: allowOAuthCache)
